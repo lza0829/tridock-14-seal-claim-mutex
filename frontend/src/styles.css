@@ -147,6 +147,7 @@ th { color: var(--muted); font-weight: 600; }
 .tag.ok { background: rgba(47,107,79,0.15); color: var(--ok); }
 .tag.bad { background: rgba(139,58,58,0.15); color: var(--danger); }
 .tag.seal { background: rgba(31,78,121,0.15); color: var(--accent); }
+.tag.warn { background: rgba(176,128,32,0.18); color: #b07f20; }
 .msg { color: var(--danger); min-height: 1.2em; margin: 8px 0; }
 .okmsg { color: var(--ok); }
 @media (max-width: 960px) {

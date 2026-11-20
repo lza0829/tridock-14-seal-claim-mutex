@@ -19,9 +19,15 @@ def dashboard():
             (day,),
         ).fetchone()
         pending = 0
+        quarantine_held = 0
         if batch:
             pending = conn.execute(
                 "SELECT COUNT(*) c FROM variance_rows WHERE batch_id=? AND fate='pending'",
+                (batch["id"],),
+            ).fetchone()["c"]
+            # 总览暂存计数直接数 held 行，并与批次快照 quarantine_count 对齐。
+            quarantine_held = conn.execute(
+                "SELECT COUNT(*) c FROM quarantine_staging WHERE batch_id=? AND status='held'",
                 (batch["id"],),
             ).fetchone()["c"]
         return {
@@ -32,6 +38,7 @@ def dashboard():
             "confirm_count": confirm_n,
             "latest_batch": dict(batch) if batch else None,
             "pending_variance": pending,
+            "quarantine_count": quarantine_held,
         }
     finally:
         conn.close()

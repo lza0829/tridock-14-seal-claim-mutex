@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS reconcile_batches (
   dock_day TEXT NOT NULL,
   matched_count INTEGER NOT NULL,
   variance_count INTEGER NOT NULL,
+  quarantine_count INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL,
   sealed_at TEXT,
   note TEXT
@@ -75,6 +76,36 @@ CREATE TABLE IF NOT EXISTS variance_rows (
   fate TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+-- 架构 B（舱内处置）：暂存舱。held 行与正式命运互斥，同批同键只允许一条 held。
+CREATE TABLE IF NOT EXISTS quarantine_staging (
+  id INTEGER PRIMARY KEY,
+  batch_id INTEGER NOT NULL,
+  variance_id INTEGER NOT NULL,
+  dock_day TEXT NOT NULL,
+  supplier_code TEXT NOT NULL,
+  sku TEXT NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL DEFAULT 'held',
+  created_at TEXT NOT NULL,
+  cleared_at TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_quarantine_held_key
+  ON quarantine_staging(batch_id, supplier_code, sku)
+  WHERE status='held';
+-- 命运审计：任何命运变更（含入舱、出舱、丢弃）都留痕，重跑对账不得物理抹除。
+CREATE TABLE IF NOT EXISTS variance_fate_audit (
+  id INTEGER PRIMARY KEY,
+  variance_id INTEGER NOT NULL,
+  batch_id INTEGER NOT NULL,
+  dock_day TEXT NOT NULL,
+  supplier_code TEXT NOT NULL,
+  sku TEXT NOT NULL,
+  from_fate TEXT,
+  to_fate TEXT NOT NULL,
+  changed_at TEXT NOT NULL,
+  operator TEXT,
+  note TEXT
+);
 CREATE TABLE IF NOT EXISTS late_spill (
   id INTEGER PRIMARY KEY,
   dock_day TEXT NOT NULL,
@@ -87,12 +118,24 @@ CREATE TABLE IF NOT EXISTS reopen_requests (
 );
 '''
 
+# 旧库补列：批次快照必须带 quarantine_count。
+_SCHEMA_MIGRATIONS = (
+    (
+        "SELECT 1 FROM pragma_table_info('reconcile_batches') WHERE name='quarantine_count'",
+        "ALTER TABLE reconcile_batches ADD COLUMN quarantine_count INTEGER NOT NULL DEFAULT 0",
+    ),
+)
+
 
 def seed_if_empty() -> None:
     conn = connect()
     try:
         conn.executescript(SCHEMA)
+        for check_sql, ddl in _SCHEMA_MIGRATIONS:
+            if not conn.execute(check_sql).fetchone():
+                conn.execute(ddl)
         if conn.execute("SELECT COUNT(*) c FROM suppliers").fetchone()["c"]:
+            conn.commit()
             return
         conn.execute("INSERT INTO settings(key, value) VALUES ('dock_day', ?)", ("2026-11-18",))
         suppliers = [
